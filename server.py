@@ -123,7 +123,7 @@ class Server:
                         "[reservar] <room> <day> <hour> - to reserve a room \n" + \
                         "[cancelar] <room> <day> <hour> - to cancel a reservation \n" + \
                         "[check] <room> <day> - to check the availability of a room \n" + \
-                        "[bye] - to disconnect from the server"
+                        "[bye] - to disconnect from the server\n"
                 
                 self.serverSocket.addSendBuffer(msgToClient, address)           # Add message to send buffer, to be sent to the client that requested the connection
                 self.broadcast(msgToAll, address)                               # Broadcast message
