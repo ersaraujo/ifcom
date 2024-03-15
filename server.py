@@ -70,7 +70,7 @@ class Server:
         msg = ''
 
         if not self.serverSocket.findAddress(username):             # Check if username is already connected
-            msg = username + " esta avaliando reservas!"            # Message to be broadcasted
+            msg = username + " is evaluating reservations!"            # Message to be broadcasted
             self.serverSocket.connect(username, address)            # Add connection to server
           
         return msg
@@ -81,7 +81,7 @@ class Server:
         print("Ending connection with " + username)               
         msg = ''
         if username:
-            msg = '\n' + username + " saiu do sistema de reservas!"         # Message to be broadcasted     
+            msg = '\n' + username + " has left the reservation system!"         # Message to be broadcasted     
             self.serverSocket.disconnect(address)                           # Remove connection from server
         
         return msg
@@ -104,7 +104,7 @@ class Server:
         # List command  'list'
         if message == "list":
             connected = self.serverSocket.getConnections()          # Get all connected clients
-            msgToClient = "Usuarios conectados: " + ', '.join([connected[addressL]['username'] for addressL in connected]) # Message to be sent
+            msgToClient = "Logged in users: " + ', '.join([connected[addressL]['username'] for addressL in connected]) # Message to be sent
             self.serverSocket.addSendBuffer(msgToClient, address)           # Add message to send buffer, to be sent to the client that requested the list
 
         # Connect command 'connect as <username>'
