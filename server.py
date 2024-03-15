@@ -3,9 +3,11 @@ import threading as th
 
 class Server:
     def __init__(self):
+        # Create server socket and room manager 
         self.serverSocket = UDPComm(True)
         self.rooms = Rooms()
         
+        # Start server threads
         try:
             lock = th.Lock()
             sendThread  = th.Thread(target=self.sendMessage, args=[lock])
@@ -23,11 +25,11 @@ class Server:
         except KeyboardInterrupt:
             self.serverSocket.close()
             print("Server closed.")
-        
+
     def sendMessage(self, lock):
-        #
+        # Send messages to clients
         while True:
-            lock.acquire()
+            lock.acquire() 
             self.serverSocket.checkPacketBuffer()
             [time, address, message] = self.serverSocket.checkACK('server')
 
@@ -37,7 +39,7 @@ class Server:
             lock.release() 
     
     def receiveMessage(self, lock):
-        #
+        # Receive messages from clients
         while True:
             try:
                 packet, address, time = self.serverSocket.rdtReceive()
@@ -47,121 +49,132 @@ class Server:
                     message = dict['message']
                     
                     lock.acquire()
-                    self.serverSocket.addACK(message, address, time)
+                    self.serverSocket.addACK(message, address, time)        # Add message to ACK buffer
                     lock.release()
             
             except KeyboardInterrupt:
                 self.serverSocket.close()
                 print("Server closed.")
         
-    def broadcast(self, message, selfAddress):
-        #
+    def broadcast(self, message, selfAddress):  
+        # Send message to all connected clients except the sender
         print("Broadcasting: " + message)
-        connected = self.serverSocket.connections
+        connected = self.serverSocket.connections                   # Get all connected clients
         for address in connected:
-            if address == selfAddress:
+            if address == selfAddress:                              # Skip sender
                 continue
-            print("Sending to: " + connected[address]['username'] + " at " + str(address))
-            self.serverSocket.addSendBuffer(message, address)
+            self.serverSocket.addSendBuffer(message, address)       # Add message to send buffer
     
     def addConnection(self, username, address):
-        #
+        # Add new connection to server
         msg = ''
 
-        if not self.serverSocket.findAddress(username):
-            msg = username + " esta avaliando reservas!"
-            self.serverSocket.connect(username, address)
+        if not self.serverSocket.findAddress(username):             # Check if username is already connected
+            msg = username + " esta avaliando reservas!"            # Message to be broadcasted
+            self.serverSocket.connect(username, address)            # Add connection to server
           
         return msg
     
     def endConnection(self, address):
-        #
-        username = self.serverSocket.getUsername(address)
-        print("Ending connection with " + username)
+        # End connection with client
+        username = self.serverSocket.getUsername(address)                   # Get username
+        print("Ending connection with " + username)               
         msg = ''
         if username:
-            msg = '\n' + username + " saiu do sistema de reservas!"
-            self.serverSocket.disconnect(address)
+            msg = '\n' + username + " saiu do sistema de reservas!"         # Message to be broadcasted     
+            self.serverSocket.disconnect(address)                           # Remove connection from server
         
         return msg
     
-    def __get_str(self, t):
-        #
+    def __get_str(self, t): 
+        # Get string from time
         if t < 10:
             return '0' + str(t)
         
         return str(t)
     
     def serverTasks(self, time, address, message):
-        # connect, bye, list, reservar, cancelar, check
+        # Server tasks
 
-        _, _, _, h, m, s, _, _, _ = datetime.now().timetuple()
-        time = self.__get_str(h) + ':' + self.__get_str(m) + ':' + self.__get_str(s)
-        msg = str(time) + " " + self.serverSocket.getUsername(address) + ' - ' + str(message)
-
-        # Connect
-        if len(message) >= 12 and message[:11] == "connect as ":
-            username = message[11:]
-            if self.serverSocket.findAddress(username):
-                msg = "Usuario " + username + " ja conectado!"
-                self.serverSocket.addSendBuffer(msg, address)
-            else:
-                msg = self.addConnection(username, address)
-                msg1 = "Bem vindo ao sistema de reservas " + username + "!"
-                self.serverSocket.addSendBuffer(msg1, address)
-                self.broadcast(msg, address)
-
-        # Bye
+        # Bye command 'bye'
         if message == "bye":
-            msg = self.endConnection(address)
-            self.broadcast(msg, address)
+            msgToAll = self.endConnection(address)           # Return message to be broadcasted
+            self.broadcast(msgToAll, address)                # Broadcast message
 
-        # List
+        # List command  'list'
         if message == "list":
-            connected = self.serverSocket.getConnections()
-            msg = "Usuarios conectados: " + ', '.join([connected[addressL]['username'] for addressL in connected])
-            self.serverSocket.addSendBuffer(msg, address)
+            connected = self.serverSocket.getConnections()          # Get all connected clients
+            msgToClient = "Usuarios conectados: " + ', '.join([connected[addressL]['username'] for addressL in connected]) # Message to be sent
+            self.serverSocket.addSendBuffer(msgToClient, address)           # Add message to send buffer, to be sent to the client that requested the list
 
-        # Reservar
-        if len(message) >= 10 and message[:8] == "reservar":
-            print("Reservando...")
-            sala = message[9:13]
-            dia = message[14:21]
-            hora = int(message[22:])
-            if self.rooms.reservarSala(dia, sala, hora-8, self.serverSocket.getUsername(address)):
-                msg = self.serverSocket.getUsername(address) + " " + str(address) + " reservou a sala " + sala + " para " + dia + " as " + str(hora) + "h!"
-                msg2 = "Voce " + str(address) + " reservou a sala " + sala + " para " + dia + " as " + str(hora) + "h!"
-                self.broadcast(msg, address)
-                self.serverSocket.addSendBuffer(msg2, address)
+        # Connect command 'connect as <username>'
+        if len(message) >= 12 and message[:11] == "connect as ":    
+            username = message[11:]                                     # Get username
+            
+            if self.serverSocket.findAddress(username):                 # Check if username is already connected, to avoid duplicates
+                msgToClient = "The username '" + username + "' is already logged in!"
+                self.serverSocket.addSendBuffer(msgToClient, address)           # Add message to send buffer, to be sent to the client that requested the connection
+
             else:
-                msg = "A Sala " + sala + " ja reservada para " + dia + " as " + str(hora) + "h!"
-                self.serverSocket.addSendBuffer(msg, address)
+                msgToAll = self.addConnection(username, address)             # Add connection to server and return message to be broadcasted
+                msgToClient = "Hi " + username + " Welcome to the reservation system \n" + \
+                        "You can use the following commands: \n" + \
+                        "[list] - to list all connected users \n" + \
+                        "[reservar] <room> <day> <hour> - to reserve a room \n" + \
+                        "[cancelar] <room> <day> <hour> - to cancel a reservation \n" + \
+                        "[check] <room> <day> - to check the availability of a room \n" + \
+                        "[bye] - to disconnect from the server"
+                
+                self.serverSocket.addSendBuffer(msgToClient, address)           # Add message to send buffer, to be sent to the client that requested the connection
+                self.broadcast(msgToAll, address)                               # Broadcast message
+
+        # Reserve command 'reservar <sala> <dia> <hora>'
+        if len(message) >= 10 and message[:8] == "reservar":
+            room = message[9:13]                            # Get room
+            day = message[14:21]                            # Get day
+            hour = int(message[22:])                        # Get hour
+
+            if self.rooms.reserveRoom(day, room, hour-8, self.serverSocket.getUsername(address)):       # If room is available
+                msgToAll = self.serverSocket.getUsername(address) + " " + str(address) + " reserved the " + room + " room for " + day + " at " + str(hour) + "h!"
+                msgToClient = "You " + str(address) + " have reserved the " + room + " room for " + day + " at " + str(hour) + "h!"
+                
+                self.serverSocket.addSendBuffer(msgToClient, address)       # Add message to send buffer, to be sent to the client that requested the reservation
+                self.broadcast(msgToAll, address)                           # Broadcast message
+
+            else:                                    # If room is not available
+                msgToClient = "The " + room + " room is already reserved for " + day + " at " + str(hour) + "h!"    
+                self.serverSocket.addSendBuffer(msgToClient, address)            # Add message to send buffer, to be sent to the client that requested the reservation
 
         # Cancelar
         if len(message) >= 10 and message[:8] == "cancelar":
-            sala = message[9:13]
-            dia = message[14:21]
-            hora = int(message[22:])
-            if self.rooms.cancelarReserva(dia, sala, hora-8, self.serverSocket.getUsername(address)):
-                msg = self.serverSocket.getUsername(address) + " cancelou a reserva da sala " + sala + " para " + dia + " as " + str(hora) + "h!"
-                self.broadcast(msg, address)
+            room = message[9:13]                            # Get room
+            day = message[14:21]                            # Get day
+            hour = int(message[22:])                        # Get hour
+            
+            if self.rooms.cancelReservation(day, room, hour-8, self.serverSocket.getUsername(address)):     # If room has been reserved by the user
+                msgToAll = self.serverSocket.getUsername(address) + " canceled the " + room + " room reservation for " + day + " at " + str(hour) + "h!"
+                self.broadcast(msgToAll, address)
+           
             else:
-                msg = "Nao foi possivel cancelar... A sala " + sala + " está livre ou foi reservada por outro usuario para " + dia + " as " + str(hora) + "h!"
-                self.serverSocket.addSendBuffer(msg, address)
+                msgToClient = "Unable to cancel... The " + room + " room is free or has been reserved by another user for " + day + " at " + str(hour) + "h!"
+                self.serverSocket.addSendBuffer(msgToClient, address)
 
         # Check
         if len(message) >= 7 and message[:5] == "check":
-            sala = message[6:10]
-            dia = message[11:]
-            horarios = self.rooms.checkRoom(dia, sala)
-            horariosL = []
-            for i in range(9):
-                if horarios[i] == 0:
-                    horariosL.append(str(i+8) + "h")
+            room = message[6:10]                    # Get room
+            day = message[11:]                      # Get day
+
+            hours = self.rooms.checkRoom(day, room)     # Get room availability
+            answer = []                                 
+            
+            for i in range(9):                          
+                if hours[i] == 0:
+                    answer.append(str(i+8) + "h")       # Add available hours
                 else:
-                    horariosL.append(horarios[i])
-            msg = "Sala " + sala + " - " + dia + "-feira: " + ', '.join(horariosL)
-            self.serverSocket.addSendBuffer(msg, address)
+                    answer.append(hours[i])             # Add reserved hours
+            
+            msgToClient = "The " + room + " room - " + day + ": " + ', '.join(answer)
+            self.serverSocket.addSendBuffer(msgToClient, address)
 
 if __name__ == "__main__":
-    Server()
+    Server()            # Start server
